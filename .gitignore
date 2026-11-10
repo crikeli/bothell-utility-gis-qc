@@ -1,0 +1,19 @@
+# Raw citywide source data: large, mostly-unused (only wFireHydrants/wPipes/wMeterBoxes
+# from the Water package feed this project), and publicly re-downloadable from
+# https://www.bothellwa.gov/238/GIS-Data — not worth bloating the repo with.
+data/raw/
+
+# GeoPackage WAL/SHM lock files — transient, not meant to be versioned
+*.gpkg-wal
+*.gpkg-shm
+
+# Debug/intermediate exhibit exports from iterating on the print layout
+outputs/utility_qc_exhibit_test.png
+outputs/utility_qc_exhibit_test2.png
+
+# QGIS auxiliary/lock files
+*.qgz~
+.qgis.conf
+
+# OS cruft
+.DS_Store
