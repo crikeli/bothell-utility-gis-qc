@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bothell Water Utility GIS QC</title>
+<meta name="description" content="Interactive map reconciling City of Bothell water-utility GIS records against simulated field verification, with a live discrepancy-tolerance slider.">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+  :root {
+    --ink-primary: #1a1a1a;
+    --ink-secondary: #4a4a4a;
+    --ink-muted: #767676;
+    --surface: #ffffff;
+    --surface-sunken: #f4f4f4;
+    --border: #d8d8d8;
+    --accent: #1f78b4;
+    --hydrant: #e31a1c;
+    --meterbox: #8a8a8a;
+    --pipe: #6a9a3a;
+    --flag: #ff7f00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink-primary: #ececec;
+      --ink-secondary: #c2c2c2;
+      --ink-muted: #8f8f8f;
+      --surface: #1e1e1e;
+      --surface-sunken: #161616;
+      --border: #3a3a3a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink-primary: #ececec;
+    --ink-secondary: #c2c2c2;
+    --ink-muted: #8f8f8f;
+    --surface: #1e1e1e;
+    --surface-sunken: #161616;
+    --border: #3a3a3a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--surface);
+    color: var(--ink-primary);
+  }
+  #map { position: absolute; inset: 0; background: var(--surface-sunken); }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+    color: var(--ink-primary);
+  }
+
+  #sidebar {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    z-index: 1000;
+    width: 300px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    padding: 16px;
+  }
+  #sidebar h1 {
+    font-size: 16px;
+    margin: 0 0 4px;
+    line-height: 1.3;
+  }
+  #sidebar .subtitle {
+    font-size: 12px;
+    color: var(--ink-muted);
+    margin: 0 0 14px;
+    line-height: 1.4;
+  }
+  #sidebar .subtitle b { color: var(--ink-secondary); }
+
+  .field-row { margin-bottom: 14px; }
+  .field-row label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-secondary);
+    margin-bottom: 6px;
+  }
+  #toleranceValue { color: var(--accent); font-variant-numeric: tabular-nums; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+
+  .stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    background: var(--surface-sunken);
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 14px;
+  }
+  .stat { text-align: center; }
+  .stat .n { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .lbl { font-size: 10px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  .stat.flagged .n { color: var(--flag); }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--ink-secondary);
+    margin-bottom: 14px;
+  }
+
+  .legend { font-size: 12px; color: var(--ink-secondary); }
+  .legend h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--ink-muted);
+    margin: 0 0 8px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .swatch { width: 14px; height: 14px; border-radius: 50%; flex: none; display: inline-block; }
+  .swatch.tri {
+    width: 0; height: 0; border-radius: 0;
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    border-bottom: 12px solid var(--hydrant);
+  }
+  .swatch.ring {
+    background: transparent;
+    border: 2.5px solid var(--flag);
+  }
+  .swatch.line { width: 16px; height: 3px; border-radius: 2px; background: var(--pipe); }
+
+  .links { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 11px; color: var(--ink-muted); }
+  .links a { color: var(--accent); text-decoration: none; }
+  .links a:hover { text-decoration: underline; }
+
+  .leaflet-popup-content { font-size: 12.5px; line-height: 1.5; }
+  .leaflet-popup-content b { color: var(--ink-primary); }
+  .popup-flag { color: var(--flag); font-weight: 700; }
+
+  @media (max-width: 520px) {
+    #sidebar { width: calc(100vw - 32px); }
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="sidebar" class="panel">
+  <h1>Bothell Water Utility GIS QC</h1>
+  <p class="subtitle">
+    Real City of Bothell hydrant/pipe/meter-box GIS records vs. a
+    <b>SIMULATED</b> field verification pass — see
+    <a href="https://github.com/crikeli/bothell-utility-gis-qc" target="_blank" rel="noopener">README</a>
+    for the full method.
+  </p>
+
+  <div class="field-row">
+    <label>Positional tolerance <span id="toleranceValue">15 ft</span></label>
+    <input type="range" id="tolerance" min="0" max="90" step="1" value="15">
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="n" id="statVisited">25</div><div class="lbl">Visited</div></div>
+    <div class="stat flagged"><div class="n" id="statFlagged">5</div><div class="lbl">Flagged</div></div>
+    <div class="stat"><div class="n" id="statPositional">2</div><div class="lbl">Positional</div></div>
+    <div class="stat"><div class="n" id="statAttribute">4</div><div class="lbl">Attribute</div></div>
+  </div>
+
+  <div class="checkbox-row">
+    <input type="checkbox" id="onlyFlagged">
+    <label for="onlyFlagged" style="margin:0; font-weight:400;">Show only flagged field points</label>
+  </div>
+
+  <div class="legend">
+    <h2>Legend</h2>
+    <div class="legend-item"><span class="swatch tri"></span> Fire hydrant (GIS record)</div>
+    <div class="legend-item"><span class="swatch" style="background:#8a8a8a"></span> Meter box (GIS record)</div>
+    <div class="legend-item"><span class="swatch line"></span> Water pipe (GIS record)</div>
+    <div class="legend-item"><span class="swatch" style="background:#1f78b4"></span> Field verification point</div>
+    <div class="legend-item"><span class="swatch ring"></span> Flagged at current tolerance</div>
+  </div>
+
+  <div class="links">
+    Source: City of Bothell public GIS data, 10/29/2026 · Basemap: OpenStreetMap ·
+    <a href="https://github.com/crikeli/bothell-utility-gis-qc" target="_blank" rel="noopener">View on GitHub</a>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+(function () {
+  const map = L.map('map', { zoomControl: true }).setView([47.76, -122.2], 15);
+
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19
+  }).addTo(map);
+
+  function triangleIcon(color) {
+    return L.divIcon({
+      className: '',
+      html: `<div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:11px solid ${color};filter:drop-shadow(0 0 1px rgba(0,0,0,0.5));"></div>`,
+      iconSize: [12, 11],
+      iconAnchor: [6, 9]
+    });
+  }
+
+  const layerGroups = {
+    pipes: L.layerGroup(),
+    meterboxes: L.layerGroup(),
+    hydrants: L.layerGroup(),
+    fieldPoints: L.layerGroup()
+  };
+  Object.values(layerGroups).forEach(g => g.addTo(map));
+
+  L.control.layers(null, {
+    'Water pipes': layerGroups.pipes,
+    'Meter boxes': layerGroups.meterboxes,
+    'Fire hydrants': layerGroups.hydrants,
+    'Field verification points': layerGroups.fieldPoints
+  }, { collapsed: true }).addTo(map);
+
+  const toleranceInput = document.getElementById('tolerance');
+  const toleranceValue = document.getElementById('toleranceValue');
+  const onlyFlaggedBox = document.getElementById('onlyFlagged');
+  let fieldFeatureLayers = []; // {layer, props}
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function fieldPointStyle(offsetFt, isAttrFlag, tolerance) {
+    const isPosFlag = offsetFt !== null && offsetFt > tolerance;
+    const flagged = isPosFlag || isAttrFlag;
+    return {
+      radius: flagged ? 8 : 5,
+      color: flagged ? '#ff7f00' : '#0a3c64',
+      weight: flagged ? 3 : 1,
+      fillColor: '#1f78b4',
+      fillOpacity: 0.9
+    };
+  }
+
+  function updateFieldPoints() {
+    const tol = Number(toleranceInput.value);
+    toleranceValue.textContent = tol + ' ft';
+
+    let flaggedCount = 0, posCount = 0, attrCount = 0;
+    fieldFeatureLayers.forEach(({ layer, props }) => {
+      const offsetFt = props.offset_ft;
+      const isAttrFlag = !!(props.field_status_note && props.field_status_note.length);
+      const isPosFlag = offsetFt !== null && offsetFt !== undefined && offsetFt > tol;
+      const flagged = isPosFlag || isAttrFlag;
+
+      layer.setStyle(fieldPointStyle(offsetFt, isAttrFlag, tol));
+      if (onlyFlaggedBox.checked) {
+        if (flagged) { if (!map.hasLayer(layer)) layerGroups.fieldPoints.addLayer(layer); }
+        else { layerGroups.fieldPoints.removeLayer(layer); }
+      } else if (!layerGroups.fieldPoints.hasLayer(layer)) {
+        layerGroups.fieldPoints.addLayer(layer);
+      }
+
+      if (flagged) flaggedCount++;
+      if (isPosFlag) posCount++;
+      if (isAttrFlag) attrCount++;
+    });
+
+    document.getElementById('statFlagged').textContent = flaggedCount;
+    document.getElementById('statPositional').textContent = posCount;
+    document.getElementById('statAttribute').textContent = attrCount;
+  }
+
+  toleranceInput.addEventListener('input', updateFieldPoints);
+  onlyFlaggedBox.addEventListener('change', updateFieldPoints);
+
+  const dataBase = 'data/';
+
+  fetch(dataBase + 'pipes.geojson').then(r => r.json()).then(gj => {
+    L.geoJSON(gj, {
+      style: { color: '#6a9a3a', weight: 2, opacity: 0.9 }
+    }).addTo(layerGroups.pipes);
+  });
+
+  fetch(dataBase + 'meterboxes.geojson').then(r => r.json()).then(gj => {
+    L.geoJSON(gj, {
+      pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+        radius: 3, color: '#5a5a5a', weight: 1, fillColor: '#8a8a8a', fillOpacity: 0.85
+      }),
+      onEachFeature: (f, layer) => {
+        const p = f.properties;
+        layer.bindPopup(`<b>Meter Box</b><br>GISID: ${escapeHtml(p.GISID ?? '—')}`);
+      }
+    }).addTo(layerGroups.meterboxes);
+  });
+
+  fetch(dataBase + 'hydrants.geojson').then(r => r.json()).then(gj => {
+    const hydrantLayer = L.geoJSON(gj, {
+      pointToLayer: (f, latlng) => L.marker(latlng, { icon: triangleIcon('#e31a1c') }),
+      onEachFeature: (f, layer) => {
+        const p = f.properties;
+        layer.bindPopup(`<b>Fire Hydrant</b><br>GISID: ${escapeHtml(p.GISID ?? '—')}<br>Status: ${escapeHtml(p.Status ?? '—')}`);
+      }
+    }).addTo(layerGroups.hydrants);
+    map.fitBounds(hydrantLayer.getBounds(), { padding: [40, 40] });
+  });
+
+  fetch(dataBase + 'field_points.geojson').then(r => r.json()).then(gj => {
+    gj.features.forEach(f => {
+      const p = f.properties;
+      const coords = f.geometry.coordinates;
+      const latlng = [coords[1], coords[0]];
+      const layer = L.circleMarker(latlng, fieldPointStyle(p.offset_ft, !!(p.field_status_note && p.field_status_note.length), Number(toleranceInput.value)));
+
+      const offsetTxt = (p.offset_ft !== null && p.offset_ft !== undefined) ? p.offset_ft.toFixed(1) + ' ft' : '—';
+      const statusLine = p.field_status_note
+        ? `<br><span class="popup-flag">⚠ ${escapeHtml(p.field_status_note)}</span>`
+        : '';
+      layer.bindPopup(
+        `<b>Field Verification (SIMULATED)</b><br>` +
+        `GISID: ${escapeHtml(p.GISID ?? '—')}<br>` +
+        `Offset from GIS record: ${offsetTxt}<br>` +
+        `Crew: ${escapeHtml(p.field_crew ?? '—')} on ${escapeHtml((p.field_date ?? '').slice(0,10))}` +
+        statusLine
+      );
+
+      fieldFeatureLayers.push({ layer, props: p });
+      layerGroups.fieldPoints.addLayer(layer);
+    });
+    updateFieldPoints();
+  });
+})();
+</script>
+</body>
+</html>

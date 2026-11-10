@@ -7,6 +7,11 @@ Mapping Technician)** posting
 [class specification](https://www.governmentjobs.com/careers/bothellwa/classspecs/1398747)),
 using the City's own public water-utility GIS data.
 
+**[Live interactive map →](https://crikeli.github.io/bothell-utility-gis-qc/)**
+— pan/click through the real GIS layers and the simulated field verification
+points, and drag the tolerance slider to see positional discrepancies get
+flagged or cleared in real time.
+
 ## Why this project exists
 
 The posting's core duties center on comparing GIS records against real-world
@@ -52,6 +57,8 @@ gap rather than overstating ArcGIS Pro experience I don't have.
 | `scripts/02_qc_discrepancy_check.py` | Compares field data against the GIS record and flags discrepancies |
 | `bothell_utility_qc.qgz` | QGIS project: styled layers, OpenStreetMap basemap, print layout |
 | `outputs/utility_qc_exhibit.png` | Exported map exhibit |
+| `docs/` | Interactive Leaflet web map (GitHub Pages source) and its GeoJSON data |
+| `scripts/03_export_webmap_geojson.py` | Converts the study-area GeoPackages to the GeoJSON the web map reads |
 | `SOP.md` | Standard Operating Procedure for the QC workflow this project implements |
 
 ## Data
